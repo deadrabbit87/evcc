@@ -59,11 +59,6 @@ render: |
     - source: sunspec
       {{- include "modbus" . | indent 4 }}
       value: 160:3:DCW # string 3
-  energy:
-    source: sunspec
-    {{- include "modbus" . | indent 2 }}
-    value: 103:WH # total yield
-    scale: 0.001
   {{- end }}
   {{- if eq .usage "battery" }}
   type: custom
@@ -75,16 +70,32 @@ render: |
     source: sunspec
     {{- include "modbus" . | indent 2 }}
     value: 802:SoC # 802 battery control
-  limitsoc:
-    source: watchdog
-    timeout: {{ .watchdog }} # re-write at timeout/2
-    set:
-      source: modbus
-      {{- include "modbus" . | indent 4 }}
-      register:
-        address: 1042 # limit soc
-        type: writemultiple
-        encoding: {{ if (eq .endianness "big") }}float32{{ else }}float32s{{ end }}
+  batterymode:
+    source: switch
+    switch:
+    - case: 1 # normal
+    - case: 2 # hold
+      set: 
+      - source: const
+        value: 0 
+        set: 
+          source: modbus
+          {{- include "modbus" . | indent 8 }}
+          register:
+            address: 1028 
+            type: writemultiple
+            decode: int32
+    - case: 3 # charge
+      set: 
+      - source: const
+        value: -100
+        set: 
+          source: modbus
+          {{- include "modbus" . | indent 8 }}
+          register:
+            address: 1028 
+            type: writemultiple
+            decode: int32
   capacity: {{ .capacity }} # kWh
   minsoc: {{ .minsoc }} # %
   maxsoc: {{ .maxsoc }} # %
