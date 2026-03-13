@@ -1,0 +1,23 @@
+template: co2map
+products:
+  - brand: CO₂Map.de
+requirements:
+  description:
+    de: "Regionale CO₂-Emissionsdaten für Deutschland von [co2map.de](https://co2map.de)"
+    en: "Regional CO₂ emission data for Germany from [co2map.de](https://co2map.de)"
+  evcc: ["skiptest"]
+group: co2
+countries: ["DE"]
+params:
+  - name: state
+    type: string
+    default: DE
+    description:
+      de: Bundesland
+      en: State
+    help:
+      de: "Bundesland-Kürzel (z.B. BW, BY, NW) oder DE für ganz Deutschland. Siehe [co2map.de](https://co2map.de)"
+      en: "State code (e.g. BW, BY, NW) or DE for all of Germany. See [co2map.de](https://co2map.de)"
+render: |
+  type: co2map
+  state: {{ .state }}
