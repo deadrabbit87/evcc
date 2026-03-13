@@ -55,11 +55,12 @@ func (t *Co2Map) run(done chan error) {
 	var once sync.Once
 
 	for tick := time.Tick(time.Hour); ; <-tick {
-		today := time.Now().Format("2006-01-02")
+		// query from yesterday to tomorrow to ensure we always have valid rates
+		yesterday := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
 		tomorrow := time.Now().Add(24 * time.Hour).Format("2006-01-02")
 
 		uri := fmt.Sprintf("https://api.co2map.de/ConsumptionIntensityPreliminary/?state=%s&country=%s&start=%s&end=%s",
-			t.state, t.country, today, tomorrow)
+			t.state, t.country, yesterday, tomorrow)
 
 		var res co2MapResponse
 
@@ -104,12 +105,12 @@ func (t *Co2Map) Type() api.TariffType {
 
 // co2MapResponse represents the API response
 type co2MapResponse struct {
-	State     string         `json:"state"`
-	Start     string         `json:"start"`
-	End       string         `json:"end"`
-	Unit      string         `json:"unit"`
-	Country   string         `json:"country"`
-	Intensity []co2MapSlot   `json:"-"`
+	State     string       `json:"state"`
+	Start     string       `json:"start"`
+	End       string       `json:"end"`
+	Unit      string       `json:"unit"`
+	Country   string       `json:"country"`
+	Intensity []co2MapSlot `json:"-"`
 }
 
 // co2MapSlot represents a single [timestamp, value] pair
@@ -144,7 +145,7 @@ func (r *co2MapResponse) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	// find the intensity array (key contains "Intensity")
+	// find the intensity array — the key varies by endpoint
 	for key, val := range raw {
 		switch key {
 		case "state", "start", "end", "unit", "country":
