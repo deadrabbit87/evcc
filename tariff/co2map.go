@@ -84,6 +84,14 @@ func (t *Co2Map) run(done chan error) {
 			})
 		}
 
+		// extend last known rate to cover the current hour,
+		// since the API only provides data for completed hours
+		if n := len(data); n > 0 {
+			if now := time.Now(); data[n-1].End.Before(now) {
+				data[n-1].End = now.Truncate(time.Hour).Add(time.Hour)
+			}
+		}
+
 		mergeRates(t.data, data)
 		once.Do(func() { close(done) })
 	}
@@ -177,9 +185,11 @@ func (r *co2MapResponse) UnmarshalJSON(data []byte) error {
 
 			s := co2MapSlot{Timestamp: t}
 
-			var val float64
-			if err := json.Unmarshal(pair[1], &val); err == nil {
-				s.Value = &val
+			if string(pair[1]) != "null" {
+				var val float64
+				if err := json.Unmarshal(pair[1], &val); err == nil {
+					s.Value = &val
+				}
 			}
 
 			r.Intensity = append(r.Intensity, s)
