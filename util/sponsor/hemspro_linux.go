@@ -21,9 +21,12 @@ package sponsor
 
 import (
 	i2c "github.com/d2r2/go-i2c"
+	"github.com/evcc-io/evcc/util"
 )
 
 const hemspro = "hemspro"
+
+var hemsProLog = util.NewLogger("hemspro")
 
 // checkHemsPro checks if the hardware is a supported HEMS Pro device and returns sponsor subject
 func checkHemsPro() string {
@@ -35,19 +38,25 @@ func checkHemsPro() string {
 	// Create new connection to I2C bus 1
 	i2c, err := i2c.NewI2C(ADDR, 1)
 	if err != nil {
+		hemsProLog.ERROR.Printf("[DEBUG-DNS] i2c.NewI2C failed: %v", err)
 		return ""
 	}
 	defer i2c.Close()
 
 	if _, err := i2c.WriteBytes([]byte{REG_TIMEDATE}); err != nil {
+		hemsProLog.ERROR.Printf("[DEBUG-DNS] i2c WriteBytes failed: %v", err)
 		return ""
 	}
 
 	buf := make([]byte, 7)
 	if n, err := i2c.ReadBytes(buf); err != nil || n != 7 {
+		hemsProLog.ERROR.Printf("[DEBUG-DNS] i2c ReadBytes failed: n=%d err=%v", n, err)
 		return ""
 	}
 
 	// I2C succeeded — verify with server
-	return checkHardware(hemspro, nil)
+	hemsProLog.DEBUG.Printf("[DEBUG-DNS] i2c read OK, starting sponsor-server hardware check")
+	sub := checkHardware(hemspro, nil)
+	hemsProLog.DEBUG.Printf("[DEBUG-DNS] checkHardware returned subject=%q", sub)
+	return sub
 }

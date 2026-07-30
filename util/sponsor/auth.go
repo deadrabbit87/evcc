@@ -27,12 +27,15 @@ import (
 	"time"
 
 	"github.com/evcc-io/evcc/api/proto/pb"
+	"github.com/evcc-io/evcc/util"
 	"github.com/evcc-io/evcc/util/cloud"
 	"github.com/evcc-io/evcc/util/machine"
 	"github.com/golang-jwt/jwt/v5"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+var authLog = util.NewLogger("sponsor-auth")
 
 var (
 	mu             sync.RWMutex
@@ -64,16 +67,21 @@ func ConfigureSponsorship(token string) error {
 	defer mu.Unlock()
 
 	if token == "" {
+		authLog.DEBUG.Printf("[DEBUG-DNS] ConfigureSponsorship: no token, HEMSPRO env=%q", os.Getenv("HEMSPRO"))
+
 		if sub := checkVictron(); sub != "" {
 			Subject = sub
 			return nil
 		}
 
 		if os.Getenv("HEMSPRO") != "" {
+			authLog.DEBUG.Printf("[DEBUG-DNS] HEMSPRO set, calling checkHemsPro")
 			if sub := checkHemsPro(); sub != "" {
 				Subject = sub
+				authLog.DEBUG.Printf("[DEBUG-DNS] checkHemsPro succeeded, subject=%q", sub)
 				return nil
 			}
+			authLog.ERROR.Printf("[DEBUG-DNS] checkHemsPro failed, falling through to pulsares/token check")
 		}
 
 		var err error
