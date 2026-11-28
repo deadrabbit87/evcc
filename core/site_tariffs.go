@@ -287,10 +287,8 @@ const (
 
 // solarNowcastResult is the outcome of the metrics query behind the solar nowcast
 type solarNowcastResult struct {
-	ratio, day     float64 // produced/forecasted of the last slots and of the day so far, capped at 1
-	ok, dayOk      bool
-	from, to       time.Time
-	pvSum, fcstSum float64
+	ratio, day float64 // produced/forecasted of the last slots and of the day so far, capped at 1
+	ok, dayOk  bool
 }
 
 // solarHold remembers a day on which the modules produced next to nothing despite the
