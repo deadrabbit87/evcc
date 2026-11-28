@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vite-plus/test";
-import { expandForecast, findLowestSumSlotIndex, isStaticTariff } from "./forecast";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vite-plus/test";
+import { adjustedSolar, expandForecast, findLowestSumSlotIndex, isStaticTariff } from "./forecast";
 
 describe("expandForecast", () => {
   test("expands slots to milliseconds", () => {
@@ -112,5 +112,43 @@ describe("isStaticTariff", () => {
       { start: 1735691400000, end: 1735692300000, value: 0.25 },
     ];
     expect(isStaticTariff(slots)).toBe(false);
+  });
+});
+
+describe("adjustedSolar", () => {
+  const hour = 3600 * 1000;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 10, 28, 11, 0));
+  });
+  afterEach(() => vi.useRealTimers());
+
+  const solar = (nowcast?: number) => {
+    const now = Date.now();
+    return {
+      scale: 0.5,
+      nowcast,
+      today: { energy: 1000, complete: true },
+      tomorrow: { energy: 1000, complete: true },
+      timeseries: [
+        { ts: now - hour, val: 1000 },
+        { ts: now + hour, val: 1000 },
+        { ts: now + 24 * hour, val: 1000 },
+      ],
+    };
+  };
+
+  test("long-term scale without nowcast", () => {
+    const res = adjustedSolar(solar());
+    expect(res?.today?.energy).toBe(500);
+    expect(res?.timeseries?.map((e) => e.val)).toEqual([500, 500, 500]);
+  });
+
+  test("nowcast replaces the scale for the rest of today", () => {
+    const res = adjustedSolar(solar(0.1));
+    expect(res?.today?.energy).toBe(100);
+    expect(res?.tomorrow?.energy).toBe(500);
+    expect(res?.timeseries?.map((e) => e.val)).toEqual([500, 100, 500]);
   });
 });

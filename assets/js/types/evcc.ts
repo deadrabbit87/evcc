@@ -1465,6 +1465,8 @@ export interface EnergyByDay {
 export interface SolarDetails {
   /** Correction factor applied to the forecast based on past production. */
   scale?: number;
+  /** Produced/forecasted ratio of the last hour, capped at 1. Only present when meaningful (daylight, complete data, no curtailment). */
+  nowcast?: number;
   /** Expected production today. */
   today?: EnergyByDay;
   /** Expected production tomorrow. */

@@ -1833,6 +1833,9 @@ components:
         scale:
           description: Correction factor applied to the forecast based on past production.
           type: number
+        nowcast:
+          description: Produced/forecasted ratio of the last hour, capped at 1. Only present when meaningful (daylight, complete data, no curtailment).
+          type: number
         today:
           $ref: "#/components/schemas/EnergyByDay"
           description: Expected production today.

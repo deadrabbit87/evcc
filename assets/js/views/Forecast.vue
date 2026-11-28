@@ -42,7 +42,11 @@
 								role="switch"
 								@change="changeAdjusted"
 							/>
-							<label class="form-check-label text-muted" for="solarForecastAdjust">
+							<label
+								class="form-check-label text-muted"
+								for="solarForecastAdjust"
+								:title="$t('forecast.solarAdjustTermsHint')"
+							>
 								<span class="d-md-none">{{ solarAdjustTextShort }}</span>
 								<span class="d-none d-md-inline">{{ solarAdjustTextMedium }}</span>
 							</label>
@@ -268,8 +272,20 @@ export default defineComponent({
 		},
 		solarAdjustPercent(): string {
 			const scale = this.forecast.solar?.scale || 1;
-			const percentDiff = scale * 100 - 100;
-			return this.fmtPercentage(percentDiff, 0, true);
+			const parts = [
+				this.$t("forecast.solarAdjustLongTerm", {
+					percent: this.fmtPercentage(scale * 100 - 100, 0, true),
+				}),
+			];
+			const nowcast = this.forecast.solar?.nowcast;
+			if (nowcast !== undefined) {
+				parts.push(
+					this.$t("forecast.solarAdjustShortTerm", {
+						percent: this.fmtPercentage(nowcast * 100 - 100, 0, true),
+					})
+				);
+			}
+			return parts.join(", ");
 		},
 		solarAdjustTextShort(): string {
 			return `${this.$t("forecast.solarAdjustShort")} (${this.solarAdjustPercent})`;

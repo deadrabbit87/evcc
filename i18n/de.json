@@ -1471,8 +1471,11 @@
       "tomorrow": "Morgen"
     },
     "solarAdjust": "PV-Vorhersage anhand der realen Erzeugungsdaten anpassen{percent}.",
+    "solarAdjustLongTerm": "langfristig {percent}",
     "solarAdjustMedium": "an reale Erzeugungsdaten anpassen",
     "solarAdjustShort": "anpassen",
+    "solarAdjustShortTerm": "kurzfristig {percent}",
+    "solarAdjustTermsHint": "Langfristig: Abweichung der letzten 30 Tage, gilt für alle Tage. Kurzfristig: Abweichung der letzten Stunde, gilt für den Rest von heute. Erfasst z. B. Schnee auf den Modulen oder Hochnebel.",
     "temperature": {
       "average": "Durchschnitt",
       "range": "Bereich"

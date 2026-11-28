@@ -89,15 +89,20 @@ export function highestSlotIndexByDay(entries: UiTimeseriesEntry[], day: number 
 export function adjustedSolar(solar?: UiSolarDetails): UiSolarDetails | undefined {
   if (!solar?.scale) return solar;
 
-  const { scale } = solar;
+  const { scale, nowcast } = solar;
   const result = deepCopy(solar);
 
-  if (result.today) result.today.energy *= scale;
+  // the rest of today follows the measured ratio of the last hour, as in the optimizer
+  const now = Date.now();
+  const endOfToday = new Date(now).setHours(24, 0, 0, 0);
+
+  if (result.today) result.today.energy *= nowcast ?? scale;
   if (result.tomorrow) result.tomorrow.energy *= scale;
   if (result.dayAfterTomorrow) result.dayAfterTomorrow.energy *= scale;
   if (result.timeseries) {
     result.timeseries.forEach((entry) => {
-      entry.val *= scale;
+      const today = nowcast !== undefined && entry.ts >= now && entry.ts < endOfToday;
+      entry.val *= today ? nowcast : scale;
     });
   }
 

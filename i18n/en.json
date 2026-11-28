@@ -1345,8 +1345,11 @@
       "tomorrow": "Tomorrow"
     },
     "solarAdjust": "Adjust solar forecast based on real production data{percent}.",
+    "solarAdjustLongTerm": "long-term {percent}",
     "solarAdjustMedium": "real data adjust",
     "solarAdjustShort": "adjust",
+    "solarAdjustShortTerm": "short-term {percent}",
+    "solarAdjustTermsHint": "Long-term: deviation of the last 30 days, applies to all days. Short-term: deviation of the last hour, applies to the rest of today. Catches e.g. snow on the modules or fog.",
     "temperature": {
       "average": "Average",
       "range": "Range"
