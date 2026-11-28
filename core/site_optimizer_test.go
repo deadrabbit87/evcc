@@ -1454,3 +1454,22 @@ func TestValidateDemand(t *testing.T) {
 		assert.Equal(t, tc.ok, err == nil, "%g Wh", tc.energy)
 	}
 }
+
+func TestScaleAndPruneFunc(t *testing.T) {
+	base := time.Date(2026, 11, 28, 23, 30, 0, 0, time.UTC)
+	rates := api.Rates{
+		{Start: base, Value: 100},
+		{Start: base.Add(15 * time.Minute), Value: 100},
+		{Start: base.Add(30 * time.Minute), Value: 100},
+	}
+	midnight := base.Add(time.Hour).Add(-30 * time.Minute)
+
+	got := scaleAndPruneFunc(rates, func(r api.Rate) float64 {
+		if r.Start.Before(midnight) {
+			return 0.1
+		}
+		return 0.7
+	}, 3)
+
+	assert.Equal(t, []float32{10, 10, 70}, got)
+}

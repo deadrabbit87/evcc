@@ -9,6 +9,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/metrics"
+	"github.com/evcc-io/evcc/hems/hems"
 	"github.com/evcc-io/evcc/tariff"
 	"github.com/evcc-io/evcc/util"
 	"github.com/jinzhu/now"
@@ -28,6 +29,7 @@ func (s forecastSeries) MarshalBytes() ([]byte, error) {
 
 type solarDetails struct {
 	Scale            float64      `json:"scale"`                // trailing percentile solar scale factor, 1 if unscaled
+	Nowcast          *float64     `json:"nowcast,omitempty"`    // produced/forecasted ratio of the last hour, capped at 1, if meaningful
 	Today            dailyDetails `json:"today"`                // tomorrow
 	Tomorrow         dailyDetails `json:"tomorrow"`             // tomorrow
 	DayAfterTomorrow dailyDetails `json:"dayAfterTomorrow"`     // day after tomorrow
@@ -242,6 +244,9 @@ func (site *Site) solarDetails(solar api.Rates) solarDetails {
 	}
 
 	res.Scale = site.solarScale()
+	if ratio, ok := site.solarNowcast(); ok {
+		res.Nowcast = &ratio
+	}
 
 	return res
 }
@@ -253,6 +258,83 @@ func (site *Site) effectiveSolarScale() float64 {
 		return 1
 	}
 	return site.solarScale()
+}
+
+const (
+	solarNowcastSlots       = 4   // trailing 15min slots compared, 1h smooths passing clouds
+	solarNowcastMinForecast = 0.3 // kWh forecasted in the window, below that the ratio is noise
+)
+
+// solarNowcast returns the produced/forecasted solar ratio of the last completed
+// slots, capped at 1. It catches what the forecast model misses for today (snow on
+// the modules, low stratus), where the long-term scale is too coarse. Returns false
+// when the data is not meaningful: night, boot or data gap, no pv metering, or
+// curtailment, where reduced production says nothing about the forecast.
+func (site *Site) solarNowcast() (float64, bool) {
+	if curtailed := hems.Curtailed(site.hems); curtailed != nil && *curtailed {
+		return 0, false
+	}
+
+	if site.solarNowcastCached == nil {
+		return site.querySolarNowcast()
+	}
+
+	// the window only changes with a new slot, so it is cached instead of
+	// queried on every site update and optimizer run
+	res, _ := site.solarNowcastCached()
+	return res.ratio, res.ok
+}
+
+// solarNowcastResult is the cached outcome of querySolarNowcast
+type solarNowcastResult struct {
+	ratio float64
+	ok    bool
+}
+
+// querySolarNowcast does the actual metrics query for solarNowcast.
+func (site *Site) querySolarNowcast() (float64, bool) {
+	to := time.Now().Truncate(tariff.SlotDuration)
+	from := to.Add(-solarNowcastSlots * tariff.SlotDuration)
+
+	series, err := metrics.QueryEnergy(from, to, "15m", true)
+	if err != nil {
+		site.log.ERROR.Printf("solar nowcast: %v", err)
+		return 0, false
+	}
+
+	var pv, fcst float64
+	var pvSlots, fcstSlots int
+	for _, s := range series {
+		var sum float64
+		for _, d := range s.Data {
+			sum += d.Energy
+		}
+		switch s.Group {
+		case metrics.PV:
+			pv, pvSlots = sum, len(s.Data)
+		case metrics.Forecast:
+			fcst, fcstSlots = sum, len(s.Data)
+		}
+	}
+
+	// a missing slot reads as zero production, so only complete windows are comparable
+	if pvSlots < solarNowcastSlots || fcstSlots < solarNowcastSlots {
+		return 0, false
+	}
+
+	ratio, ok := nowcastRatio(pv, fcst)
+	if ok {
+		site.log.DEBUG.Printf("solar nowcast: produced %.3fkWh, forecasted %.3fkWh, ratio %.3f", pv, fcst, ratio)
+	}
+	return ratio, ok
+}
+
+// nowcastRatio is the capped produced/forecasted ratio, false for too little forecast
+func nowcastRatio(produced, forecasted float64) (float64, bool) {
+	if forecasted < solarNowcastMinForecast {
+		return 0, false
+	}
+	return min(max(produced/forecasted, 0), 1), true
 }
 
 const (

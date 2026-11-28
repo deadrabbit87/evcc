@@ -40,6 +40,10 @@ using the last completed 15min metrics slot, decaying linearly over 4 slots:
 - base load: the measured home consumption replaces the first slot and decays into the profile
 - solar: the scale factor measured production/forecasted production is applied to the first slot and decays towards 1
 
+### Solar nowcast
+
+If forecast adjustment is enabled, the produced/forecasted solar ratio of the last hour (capped at 1) replaces the long-term scale for the rest of the day. This catches what forecast models miss, like snow on the modules or low stratus. It is skipped while the forecast in that hour is negligible (night), when pv metering data of the hour is incomplete, and during HEMS curtailment. Tomorrow and later keep the long-term scale.
+
 ### End of forecast commercial value
 
 Use minimum of energy consumption cost.

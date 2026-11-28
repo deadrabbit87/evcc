@@ -146,3 +146,26 @@ func TestPercentileOf(t *testing.T) {
 		assert.Less(t, p50, p90)
 	})
 }
+
+func TestNowcastRatio(t *testing.T) {
+	tc := []struct {
+		name     string
+		pv, fcst float64
+		want     float64
+		wantOk   bool
+	}{
+		{"night", 0, 0, 0, false},
+		{"too little forecast", 0.01, 0.2, 0, false},
+		{"snow", 0.02, 1.5, 0.02 / 1.5, true},
+		{"on forecast", 1.5, 1.5, 1, true},
+		{"above forecast capped", 2.5, 1.5, 1, true},
+		{"zero production", 0, 1, 0, true},
+	}
+	for _, tc := range tc {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := nowcastRatio(tc.pv, tc.fcst)
+			assert.Equal(t, tc.wantOk, ok)
+			assert.InDelta(t, tc.want, got, 1e-9)
+		})
+	}
+}

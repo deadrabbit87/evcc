@@ -124,6 +124,8 @@ type Site struct {
 	optimizer optimizerState // optimizer runs, cached results and suggestions
 
 	solarScaleCached func() (float64, error) // util.Cached wrapper around querySolarScale
+
+	solarNowcastCached func() (solarNowcastResult, error) // util.Cached wrapper around querySolarNowcast
 }
 
 // siteState is the site's cached measurement state, updated once per meter cycle
@@ -411,6 +413,11 @@ func NewSite() *Site {
 		}
 		return scale, err
 	}, 24*time.Hour)
+
+	site.solarNowcastCached = util.Cached(func() (solarNowcastResult, error) {
+		ratio, ok := site.querySolarNowcast()
+		return solarNowcastResult{ratio, ok}, nil
+	}, time.Minute)
 
 	return site
 }

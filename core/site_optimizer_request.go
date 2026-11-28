@@ -140,7 +140,19 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 			return req, details, err
 		}
 
-		ft = prorate(scaleAndPrune(solarEnergy, site.effectiveSolarScale(), minLen), firstSlotDuration)
+		scale := func(api.Rate) float64 { return site.effectiveSolarScale() }
+		if nowcast, ok := site.solarNowcast(); ok && site.GetSolarAdjusted() {
+			eod := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+			longTerm := scale
+			scale = func(r api.Rate) float64 {
+				if r.Start.Before(eod) {
+					return nowcast
+				}
+				return longTerm(r)
+			}
+		}
+
+		ft = prorate(scaleAndPruneFunc(solarEnergy, scale, minLen), firstSlotDuration)
 	}
 
 	req = optimizer.OptimizationInput{
@@ -848,10 +860,15 @@ func coarsenHorizon(req *optimizer.OptimizationInput, details *requestDetails, a
 }
 
 func scaleAndPrune(rates api.Rates, scale float64, maxLen int) []float32 {
+	return scaleAndPruneFunc(rates, func(api.Rate) float64 { return scale }, maxLen)
+}
+
+// scaleAndPruneFunc is scaleAndPrune with a per-slot scale
+func scaleAndPruneFunc(rates api.Rates, scale func(api.Rate) float64, maxLen int) []float32 {
 	res := make([]float32, 0, maxLen)
 
 	for _, slot := range rates {
-		res = append(res, float32(slot.Value*scale))
+		res = append(res, float32(slot.Value*scale(slot)))
 		if len(res) >= maxLen {
 			break
 		}
