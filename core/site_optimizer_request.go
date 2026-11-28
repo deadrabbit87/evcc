@@ -146,7 +146,7 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 			longTerm := scale
 			scale = func(r api.Rate) float64 {
 				if r.Start.Before(eod) {
-					return nowcast
+					return nowcastScale(longTerm(r), nowcast, r.Start.Sub(now))
 				}
 				return longTerm(r)
 			}

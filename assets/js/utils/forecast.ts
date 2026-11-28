@@ -86,6 +86,9 @@ export function highestSlotIndexByDay(entries: UiTimeseriesEntry[], day: number 
   return entries.findIndex((entry) => entry.ts === highestEntry.ts);
 }
 
+// the short-term correction fades back to the long-term scale over this time, as in the optimizer
+const NOWCAST_HORIZON = 6 * 60 * 60 * 1000;
+
 export function adjustedSolar(solar?: UiSolarDetails): UiSolarDetails | undefined {
   if (!solar?.scale) return solar;
 
@@ -96,15 +99,27 @@ export function adjustedSolar(solar?: UiSolarDetails): UiSolarDetails | undefine
   const now = Date.now();
   const endOfToday = new Date(now).setHours(24, 0, 0, 0);
 
-  if (result.today) result.today.energy *= nowcast ?? scale;
-  if (result.tomorrow) result.tomorrow.energy *= scale;
-  if (result.dayAfterTomorrow) result.dayAfterTomorrow.energy *= scale;
+  let remainingRaw = 0;
+  let remainingAdjusted = 0;
   if (result.timeseries) {
     result.timeseries.forEach((entry) => {
-      const today = nowcast !== undefined && entry.ts >= now && entry.ts < endOfToday;
-      entry.val *= today ? nowcast : scale;
+      const raw = entry.val;
+      const remaining = nowcast !== undefined && entry.ts >= now && entry.ts < endOfToday;
+      const weight = remaining ? Math.max(0, 1 - (entry.ts - now) / NOWCAST_HORIZON) : 0;
+      entry.val *= scale + ((nowcast ?? scale) - scale) * weight;
+      if (remaining) {
+        remainingRaw += raw;
+        remainingAdjusted += entry.val;
+      }
     });
   }
+
+  if (result.today) {
+    const todayScale = remainingRaw > 0 ? remainingAdjusted / remainingRaw : scale;
+    result.today.energy *= todayScale;
+  }
+  if (result.tomorrow) result.tomorrow.energy *= scale;
+  if (result.dayAfterTomorrow) result.dayAfterTomorrow.energy *= scale;
 
   result.scale = 1 / scale; // invert to allow back-adjustment
 

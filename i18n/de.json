@@ -1475,7 +1475,7 @@
     "solarAdjustMedium": "an reale Erzeugungsdaten anpassen",
     "solarAdjustShort": "anpassen",
     "solarAdjustShortTerm": "kurzfristig {percent}",
-    "solarAdjustTermsHint": "Langfristig: Abweichung der letzten 30 Tage, gilt für alle Tage. Kurzfristig: Abweichung der letzten Stunde, gilt für den Rest von heute. Erfasst z. B. Schnee auf den Modulen oder Hochnebel.",
+    "solarAdjustTermsHint": "Langfristig: Abweichung der letzten 30 Tage, gilt für alle Tage. Kurzfristig: Abweichung der letzten Stunde, gilt für den Rest von heute und läuft über 6 Stunden zum Langfristwert zurück. Erfasst z. B. Schnee auf den Modulen oder Hochnebel.",
     "temperature": {
       "average": "Durchschnitt",
       "range": "Bereich"

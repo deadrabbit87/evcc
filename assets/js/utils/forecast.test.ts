@@ -145,10 +145,16 @@ describe("adjustedSolar", () => {
     expect(res?.timeseries?.map((e) => e.val)).toEqual([500, 500, 500]);
   });
 
-  test("nowcast replaces the scale for the rest of today", () => {
+  test("nowcast fades back to the scale over the rest of today", () => {
     const res = adjustedSolar(solar(0.1));
-    expect(res?.today?.energy).toBe(100);
+    // 1h ahead: 5/6 nowcast, 1/6 scale. Past slot and tomorrow keep the scale
+    expect(res?.timeseries?.map((e) => e.val)).toEqual([
+      500,
+      1000 * (0.5 + (0.1 - 0.5) * (5 / 6)),
+      500,
+    ]);
     expect(res?.tomorrow?.energy).toBe(500);
-    expect(res?.timeseries?.map((e) => e.val)).toEqual([500, 100, 500]);
+    // remaining energy follows the adjusted slots
+    expect(res?.today?.energy).toBeCloseTo(1000 * (0.5 + (0.1 - 0.5) * (5 / 6)), 6);
   });
 });

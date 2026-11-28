@@ -147,6 +147,25 @@ func TestPercentileOf(t *testing.T) {
 	})
 }
 
+func TestNowcastScale(t *testing.T) {
+	tc := []struct {
+		name  string
+		ahead time.Duration
+		want  float64
+	}{
+		{"current slot", 0, 0.1},
+		{"already started", -10 * time.Minute, 0.1},
+		{"half way", solarNowcastHorizon / 2, 0.4},
+		{"horizon", solarNowcastHorizon, 0.7},
+		{"beyond", 2 * solarNowcastHorizon, 0.7},
+	}
+	for _, tc := range tc {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.InDelta(t, tc.want, nowcastScale(0.7, 0.1, tc.ahead), 1e-9)
+		})
+	}
+}
+
 func TestNowcastRatio(t *testing.T) {
 	tc := []struct {
 		name     string

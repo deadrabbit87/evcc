@@ -42,7 +42,7 @@ using the last completed 15min metrics slot, decaying linearly over 4 slots:
 
 ### Solar nowcast
 
-If forecast adjustment is enabled, the produced/forecasted solar ratio of the last hour (capped at 1) replaces the long-term scale for the rest of the day. This catches what forecast models miss, like snow on the modules or low stratus. It is skipped while the forecast in that hour is negligible (night), when pv metering data of the hour is incomplete, and during HEMS curtailment. Tomorrow and later keep the long-term scale.
+If forecast adjustment is enabled, the produced/forecasted solar ratio of the last hour (capped at 1) replaces the long-term scale for the rest of the day. It fades linearly back to the long-term scale over the following 6 hours, as fog lifts and clouds pass while snow stays. This catches what forecast models miss, like snow on the modules or low stratus. It is skipped while the forecast in that hour is negligible (night), when pv metering data of the hour is incomplete, and during HEMS curtailment. Tomorrow and later keep the long-term scale.
 
 ### End of forecast commercial value
 

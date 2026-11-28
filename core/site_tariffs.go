@@ -261,8 +261,9 @@ func (site *Site) effectiveSolarScale() float64 {
 }
 
 const (
-	solarNowcastSlots       = 4   // trailing 15min slots compared, 1h smooths passing clouds
-	solarNowcastMinForecast = 0.3 // kWh forecasted in the window, below that the ratio is noise
+	solarNowcastSlots       = 4             // trailing 15min slots compared, 1h smooths passing clouds
+	solarNowcastMinForecast = 0.3           // kWh forecasted in the window, below that the ratio is noise
+	solarNowcastHorizon     = 6 * time.Hour // the nowcast fades back to the long-term scale over this time
 )
 
 // solarNowcast returns the produced/forecasted solar ratio of the last completed
@@ -327,6 +328,13 @@ func (site *Site) querySolarNowcast() (float64, bool) {
 		site.log.DEBUG.Printf("solar nowcast: produced %.3fkWh, forecasted %.3fkWh, ratio %.3f", pv, fcst, ratio)
 	}
 	return ratio, ok
+}
+
+// nowcastScale fades the nowcast linearly back to the long-term scale the further
+// a slot lies ahead, as fog lifts and clouds pass while snow stays.
+func nowcastScale(longTerm, nowcast float64, ahead time.Duration) float64 {
+	w := 1 - float64(max(ahead, 0))/float64(solarNowcastHorizon)
+	return longTerm + (nowcast-longTerm)*max(w, 0)
 }
 
 // nowcastRatio is the capped produced/forecasted ratio, false for too little forecast
