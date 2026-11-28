@@ -86,40 +86,60 @@ export function highestSlotIndexByDay(entries: UiTimeseriesEntry[], day: number 
   return entries.findIndex((entry) => entry.ts === highestEntry.ts);
 }
 
-// the short-term correction fades back to the long-term scale over this time, as in the optimizer
-const NOWCAST_HORIZON = 6 * 60 * 60 * 1000;
+// short-term correction timings, as in the optimizer
+const NOWCAST_FADE = 6 * 60 * 60 * 1000;
+const HOLD_PLATEAU = 24 * 60 * 60 * 1000;
+const HOLD_FADE = 24 * 60 * 60 * 1000;
+
+function dayStart(now: number, offset: number): number {
+  const d = new Date(now);
+  d.setDate(d.getDate() + offset);
+  return d.setHours(0, 0, 0, 0);
+}
 
 export function adjustedSolar(solar?: UiSolarDetails): UiSolarDetails | undefined {
   if (!solar?.scale) return solar;
 
-  const { scale, nowcast } = solar;
+  const { scale, nowcast, hold } = solar;
   const result = deepCopy(solar);
 
-  // the rest of today follows the measured ratio of the last hour, as in the optimizer
   const now = Date.now();
-  const endOfToday = new Date(now).setHours(24, 0, 0, 0);
+  const endOfToday = dayStart(now, 1);
+  const holdSince = hold ? Date.parse(hold.since) : NaN;
 
-  let remainingRaw = 0;
-  let remainingAdjusted = 0;
-  if (result.timeseries) {
-    result.timeseries.forEach((entry) => {
-      const raw = entry.val;
-      const remaining = nowcast !== undefined && entry.ts >= now && entry.ts < endOfToday;
-      const weight = remaining ? Math.max(0, 1 - (entry.ts - now) / NOWCAST_HORIZON) : 0;
-      entry.val *= scale + ((nowcast ?? scale) - scale) * weight;
-      if (remaining) {
-        remainingRaw += raw;
-        remainingAdjusted += entry.val;
-      }
-    });
-  }
+  // weight of the short-term correction for a slot
+  const weight = (ts: number): number => {
+    if (ts < now) return 0;
+    if (hold && !Number.isNaN(holdSince)) {
+      const age = ts - holdSince;
+      return age <= HOLD_PLATEAU ? 1 : Math.max(0, 1 - (age - HOLD_PLATEAU) / HOLD_FADE);
+    }
+    if (nowcast !== undefined && ts < endOfToday) return Math.max(0, 1 - (ts - now) / NOWCAST_FADE);
+    return 0;
+  };
+  const short = nowcast ?? hold?.ratio ?? scale;
 
-  if (result.today) {
-    const todayScale = remainingRaw > 0 ? remainingAdjusted / remainingRaw : scale;
-    result.today.energy *= todayScale;
-  }
-  if (result.tomorrow) result.tomorrow.energy *= scale;
-  if (result.dayAfterTomorrow) result.dayAfterTomorrow.energy *= scale;
+  // raw and adjusted energy per day: today counts from now on
+  const days = [
+    { from: now, to: endOfToday, raw: 0, adjusted: 0 },
+    { from: endOfToday, to: dayStart(now, 2), raw: 0, adjusted: 0 },
+    { from: dayStart(now, 2), to: dayStart(now, 3), raw: 0, adjusted: 0 },
+  ];
+
+  result.timeseries?.forEach((entry) => {
+    const raw = entry.val;
+    entry.val *= scale + (short - scale) * weight(entry.ts);
+    const day = days.find((d) => entry.ts >= d.from && entry.ts < d.to);
+    if (day) {
+      day.raw += raw;
+      day.adjusted += entry.val;
+    }
+  });
+
+  const dayScale = (i: number) => (days[i].raw > 0 ? days[i].adjusted / days[i].raw : scale);
+  if (result.today) result.today.energy *= dayScale(0);
+  if (result.tomorrow) result.tomorrow.energy *= dayScale(1);
+  if (result.dayAfterTomorrow) result.dayAfterTomorrow.energy *= dayScale(2);
 
   result.scale = 1 / scale; // invert to allow back-adjustment
 

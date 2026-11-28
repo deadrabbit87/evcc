@@ -126,6 +126,9 @@ type Site struct {
 	solarScaleCached func() (float64, error) // util.Cached wrapper around querySolarScale
 
 	solarNowcastCached func() (solarNowcastResult, error) // util.Cached wrapper around querySolarNowcast
+
+	solarHoldMu sync.Mutex
+	solarHold   *solarHold // correction held after a day without production, persisted
 }
 
 // siteState is the site's cached measurement state, updated once per meter cycle
@@ -415,8 +418,7 @@ func NewSite() *Site {
 	}, 24*time.Hour)
 
 	site.solarNowcastCached = util.Cached(func() (solarNowcastResult, error) {
-		ratio, ok := site.querySolarNowcast()
-		return solarNowcastResult{ratio, ok}, nil
+		return site.querySolarNowcast(), nil
 	}, time.Minute)
 
 	return site
@@ -457,6 +459,10 @@ func (site *Site) restoreMetersAndTitle() {
 func (site *Site) restoreSettings() error {
 	if testing.Testing() {
 		return nil
+	}
+	var hold solarHold
+	if err := settings.Json(keys.SolarHold, &hold); err == nil {
+		site.solarHold = &hold
 	}
 	if v, err := settings.Float(keys.BufferSoc); err == nil {
 		if err := site.SetBufferSoc(v); err != nil && !errors.Is(err, ErrBatteryNotConfigured) {

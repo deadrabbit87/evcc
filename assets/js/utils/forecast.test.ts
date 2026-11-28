@@ -157,4 +157,29 @@ describe("adjustedSolar", () => {
     // remaining energy follows the adjusted slots
     expect(res?.today?.energy).toBeCloseTo(1000 * (0.5 + (0.1 - 0.5) * (5 / 6)), 6);
   });
+
+  describe("hold", () => {
+    const held = (since: number, nowcast?: number) => ({
+      ...solar(nowcast),
+      hold: { ratio: 0.02, since: new Date(since).toISOString() },
+      timeseries: [
+        { ts: Date.now() + hour, val: 1000 },
+        { ts: Date.now() + 18 * hour, val: 1000 },
+        { ts: Date.now() + 60 * hour, val: 1000 },
+      ],
+    });
+
+    test("carries into the next day without a nowcast", () => {
+      const res = adjustedSolar(held(Date.now() - hour));
+      // tomorrow is within the plateau, the day after has faded to the long-term scale
+      expect(res?.timeseries?.[0].val).toBeCloseTo(20, 6);
+      expect(res?.timeseries?.[1].val).toBeCloseTo(20, 6);
+      expect(res?.timeseries?.[2].val).toBeCloseTo(500, 6);
+    });
+
+    test("measured nowcast takes precedence", () => {
+      const res = adjustedSolar(held(Date.now() - hour, 0.3));
+      expect(res?.timeseries?.[0].val).toBeCloseTo(300, 6);
+    });
+  });
 });

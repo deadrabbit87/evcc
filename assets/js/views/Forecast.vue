@@ -277,7 +277,7 @@ export default defineComponent({
 					percent: this.fmtPercentage(scale * 100 - 100, 0, true),
 				}),
 			];
-			const nowcast = this.forecast.solar?.nowcast;
+			const nowcast = this.forecast.solar?.nowcast ?? this.forecast.solar?.hold?.ratio;
 			if (nowcast !== undefined) {
 				parts.push(
 					this.$t("forecast.solarAdjustShortTerm", {

@@ -1349,7 +1349,7 @@
     "solarAdjustMedium": "real data adjust",
     "solarAdjustShort": "adjust",
     "solarAdjustShortTerm": "short-term {percent}",
-    "solarAdjustTermsHint": "Long-term: deviation of the last 30 days, applies to all days. Short-term: deviation of the last hour, applies to the rest of today and fades back to long-term over 6 hours. Catches e.g. snow on the modules or fog.",
+    "solarAdjustTermsHint": "Long-term: deviation of the last 30 days, applies to all days. Short-term: deviation of the last hour, applies to the rest of today and fades back to long-term over 6 hours. After a day with almost no production it also applies to the next day. Catches e.g. snow on the modules or fog.",
     "temperature": {
       "average": "Average",
       "range": "Range"

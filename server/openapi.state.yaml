@@ -1836,6 +1836,9 @@ components:
         nowcast:
           description: Produced/forecasted ratio of the last hour, capped at 1. Only present when meaningful (daylight, complete data, no curtailment).
           type: number
+        hold:
+          $ref: "#/components/schemas/SolarHold"
+          description: Correction held after a day without production, e.g. snow on the modules. Applies to the next day as well.
         today:
           $ref: "#/components/schemas/EnergyByDay"
           description: Expected production today.
@@ -1850,6 +1853,19 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TimeseriesEntry"
+    SolarHold:
+      description: Correction held after a day without production.
+      type: object
+      properties:
+        ratio:
+          description: Produced/forecasted ratio of the day, capped at 1.
+          type: number
+        since:
+          description: Last time the condition was observed (RFC 3339).
+          type: string
+      required:
+        - ratio
+        - since
     Sponsor:
       description: Sponsorship status.
       type: object

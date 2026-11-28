@@ -9,6 +9,7 @@ import (
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/core/keys"
 	"github.com/evcc-io/evcc/core/metrics"
+	"github.com/evcc-io/evcc/db/settings"
 	"github.com/evcc-io/evcc/hems/hems"
 	"github.com/evcc-io/evcc/tariff"
 	"github.com/evcc-io/evcc/util"
@@ -28,12 +29,19 @@ func (s forecastSeries) MarshalBytes() ([]byte, error) {
 }
 
 type solarDetails struct {
-	Scale            float64      `json:"scale"`                // trailing percentile solar scale factor, 1 if unscaled
-	Nowcast          *float64     `json:"nowcast,omitempty"`    // produced/forecasted ratio of the last hour, capped at 1, if meaningful
-	Today            dailyDetails `json:"today"`                // tomorrow
-	Tomorrow         dailyDetails `json:"tomorrow"`             // tomorrow
-	DayAfterTomorrow dailyDetails `json:"dayAfterTomorrow"`     // day after tomorrow
-	Timeseries       timeseries   `json:"timeseries,omitempty"` // timeseries of forecasted energy
+	Scale            float64           `json:"scale"`                // trailing percentile solar scale factor, 1 if unscaled
+	Nowcast          *float64          `json:"nowcast,omitempty"`    // produced/forecasted ratio of the last hour, capped at 1, if meaningful
+	Hold             *solarHoldDetails `json:"hold,omitempty"`       // held correction after a day without production, if any
+	Today            dailyDetails      `json:"today"`                // tomorrow
+	Tomorrow         dailyDetails      `json:"tomorrow"`             // tomorrow
+	DayAfterTomorrow dailyDetails      `json:"dayAfterTomorrow"`     // day after tomorrow
+	Timeseries       timeseries        `json:"timeseries,omitempty"` // timeseries of forecasted energy
+}
+
+// solarHoldDetails is the held correction after a day without production
+type solarHoldDetails struct {
+	Ratio float64   `json:"ratio"`
+	Since time.Time `json:"since"` // last time the condition was observed
 }
 
 var _ api.BytesMarshaler = (*solarDetails)(nil)
@@ -244,8 +252,13 @@ func (site *Site) solarDetails(solar api.Rates) solarDetails {
 	}
 
 	res.Scale = site.solarScale()
-	if ratio, ok := site.solarNowcast(); ok {
-		res.Nowcast = &ratio
+	if nowcast := site.solarNowcast(); nowcast.ok {
+		res.Nowcast = &nowcast.ratio
+	}
+	if _, ok := site.solarCorrection(time.Now()); ok {
+		if hold := site.currentSolarHold(); hold != nil {
+			res.Hold = &solarHoldDetails{Ratio: hold.Ratio, Since: hold.Time}
+		}
 	}
 
 	return res
@@ -264,16 +277,38 @@ const (
 	solarNowcastSlots       = 4             // trailing 15min slots compared, 1h smooths passing clouds
 	solarNowcastMinForecast = 0.3           // kWh forecasted in the window, below that the ratio is noise
 	solarNowcastHorizon     = 6 * time.Hour // the nowcast fades back to the long-term scale over this time
+
+	solarHoldRatio       = 0.1            // produced/forecasted ratio of the day so far below which the correction is held
+	solarHoldMinForecast = 2.0            // kWh forecasted so far today, below that the day ratio is noise
+	solarHoldRelease     = 0.5            // a nowcast above this ends the hold, the modules produce again
+	solarHoldPlateau     = 24 * time.Hour // the held correction applies fully for this long, so the next day is planned with it
+	solarHoldFade        = 24 * time.Hour // then it fades back to the long-term scale
 )
+
+// solarNowcastResult is the outcome of the metrics query behind the solar nowcast
+type solarNowcastResult struct {
+	ratio, day     float64 // produced/forecasted of the last slots and of the day so far, capped at 1
+	ok, dayOk      bool
+	from, to       time.Time
+	pvSum, fcstSum float64
+}
+
+// solarHold remembers a day on which the modules produced next to nothing despite the
+// forecast, as with snow cover. Production cannot show it at night, but prices for
+// the next day are already known and planned against then.
+type solarHold struct {
+	Ratio float64   `json:"ratio"`
+	Time  time.Time `json:"time"` // last time the condition was observed
+}
 
 // solarNowcast returns the produced/forecasted solar ratio of the last completed
 // slots, capped at 1. It catches what the forecast model misses for today (snow on
-// the modules, low stratus), where the long-term scale is too coarse. Returns false
-// when the data is not meaningful: night, boot or data gap, no pv metering, or
-// curtailment, where reduced production says nothing about the forecast.
-func (site *Site) solarNowcast() (float64, bool) {
+// the modules, low stratus), where the long-term scale is too coarse. The result is
+// not ok when the data is not meaningful: night, boot or data gap, no pv metering,
+// or curtailment, where reduced production says nothing about the forecast.
+func (site *Site) solarNowcast() solarNowcastResult {
 	if curtailed := hems.Curtailed(site.hems); curtailed != nil && *curtailed {
-		return 0, false
+		return solarNowcastResult{}
 	}
 
 	if site.solarNowcastCached == nil {
@@ -283,58 +318,148 @@ func (site *Site) solarNowcast() (float64, bool) {
 	// the window only changes with a new slot, so it is cached instead of
 	// queried on every site update and optimizer run
 	res, _ := site.solarNowcastCached()
-	return res.ratio, res.ok
-}
-
-// solarNowcastResult is the cached outcome of querySolarNowcast
-type solarNowcastResult struct {
-	ratio float64
-	ok    bool
+	return res
 }
 
 // querySolarNowcast does the actual metrics query for solarNowcast.
-func (site *Site) querySolarNowcast() (float64, bool) {
-	to := time.Now().Truncate(tariff.SlotDuration)
+func (site *Site) querySolarNowcast() solarNowcastResult {
+	now := time.Now()
+	to := now.Truncate(tariff.SlotDuration)
 	from := to.Add(-solarNowcastSlots * tariff.SlotDuration)
+	bod := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 
-	series, err := metrics.QueryEnergy(from, to, "15m", true)
+	series, err := metrics.QueryEnergy(bod, to, "15m", true)
 	if err != nil {
 		site.log.ERROR.Printf("solar nowcast: %v", err)
-		return 0, false
+		return solarNowcastResult{}
 	}
 
-	var pv, fcst float64
-	var pvSlots, fcstSlots int
+	pv := make(map[time.Time]float64)
+	fcst := make(map[time.Time]float64)
 	for _, s := range series {
-		var sum float64
-		for _, d := range s.Data {
-			sum += d.Energy
-		}
+		m := pv
 		switch s.Group {
 		case metrics.PV:
-			pv, pvSlots = sum, len(s.Data)
 		case metrics.Forecast:
-			fcst, fcstSlots = sum, len(s.Data)
+			m = fcst
+		default:
+			continue
+		}
+		for _, d := range s.Data {
+			m[d.Start] = d.Energy
 		}
 	}
 
-	// a missing slot reads as zero production, so only complete windows are comparable
-	if pvSlots < solarNowcastSlots || fcstSlots < solarNowcastSlots {
-		return 0, false
+	// a missing slot reads as zero production, so only slots present in both series are comparable
+	var res solarNowcastResult
+	var pvDay, fcstDay, pvWin, fcstWin float64
+	var winSlots int
+	for start, f := range fcst {
+		p, ok := pv[start]
+		if !ok {
+			continue
+		}
+		pvDay += p
+		fcstDay += f
+		if !start.Before(from) {
+			pvWin += p
+			fcstWin += f
+			winSlots++
+		}
 	}
 
-	ratio, ok := nowcastRatio(pv, fcst)
-	if ok {
-		site.log.DEBUG.Printf("solar nowcast: produced %.3fkWh, forecasted %.3fkWh, ratio %.3f", pv, fcst, ratio)
+	if winSlots == solarNowcastSlots {
+		res.ratio, res.ok = nowcastRatio(pvWin, fcstWin)
+		if res.ok {
+			site.log.DEBUG.Printf("solar nowcast: produced %.3fkWh, forecasted %.3fkWh, ratio %.3f", pvWin, fcstWin, res.ratio)
+		}
 	}
-	return ratio, ok
+
+	if fcstDay >= solarHoldMinForecast {
+		res.day, res.dayOk = min(max(pvDay/fcstDay, 0), 1), true
+	}
+
+	return res
 }
 
-// nowcastScale fades the nowcast linearly back to the long-term scale the further
-// a slot lies ahead, as fog lifts and clouds pass while snow stays.
-func nowcastScale(longTerm, nowcast float64, ahead time.Duration) float64 {
-	w := 1 - float64(max(ahead, 0))/float64(solarNowcastHorizon)
-	return longTerm + (nowcast-longTerm)*max(w, 0)
+func (site *Site) currentSolarHold() *solarHold {
+	site.solarHoldMu.Lock()
+	defer site.solarHoldMu.Unlock()
+	return site.solarHold
+}
+
+// updateSolarHold sets, refreshes or clears the hold from the current nowcast and returns it
+func (site *Site) updateSolarHold(res solarNowcastResult, now time.Time) *solarHold {
+	site.solarHoldMu.Lock()
+	defer site.solarHoldMu.Unlock()
+
+	prev := site.solarHold
+	hold := prev
+
+	switch {
+	case res.dayOk && res.day < solarHoldRatio:
+		hold = &solarHold{Ratio: res.day, Time: now}
+	case hold != nil && res.ok && res.ratio > solarHoldRelease,
+		hold != nil && now.Sub(hold.Time) > solarHoldPlateau+solarHoldFade:
+		hold = nil
+	}
+
+	if hold != prev {
+		site.solarHold = hold
+		var err error
+		if hold == nil {
+			err = settings.Delete(keys.SolarHold)
+		} else {
+			err = settings.SetJson(keys.SolarHold, hold)
+		}
+		if err != nil {
+			site.log.ERROR.Printf("solar hold: %v", err)
+		}
+	}
+
+	return hold
+}
+
+// solarCorrection is the short-term correction of the solar forecast
+type solarCorrection struct {
+	ratio         float64
+	anchor        time.Time     // the correction is strongest here
+	plateau, fade time.Duration // full strength for plateau, then back to long-term over fade
+	until         time.Time     // slots from here on are not corrected, zero for all
+}
+
+// scale returns the scale for the slot starting at start
+func (c solarCorrection) scale(longTerm float64, start time.Time) float64 {
+	if !c.until.IsZero() && !start.Before(c.until) {
+		return longTerm
+	}
+	age := start.Sub(c.anchor)
+	w := 1.0
+	if age > c.plateau {
+		w = 1 - float64(age-c.plateau)/float64(c.fade)
+	}
+	return longTerm + (c.ratio-longTerm)*min(max(w, 0), 1)
+}
+
+// solarCorrection returns the correction of the solar forecast from measured
+// production, false if there is none. A day without production stays corrected
+// into the next day, otherwise only the rest of today follows the last hour.
+func (site *Site) solarCorrection(now time.Time) (solarCorrection, bool) {
+	res := site.solarNowcast()
+	hold := site.updateSolarHold(res, now)
+
+	switch {
+	case hold != nil:
+		ratio := hold.Ratio
+		if res.ok {
+			ratio = res.ratio
+		}
+		return solarCorrection{ratio: ratio, anchor: hold.Time, plateau: solarHoldPlateau, fade: solarHoldFade}, true
+	case res.ok:
+		eod := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+		return solarCorrection{ratio: res.ratio, anchor: now, fade: solarNowcastHorizon, until: eod}, true
+	}
+	return solarCorrection{}, false
 }
 
 // nowcastRatio is the capped produced/forecasted ratio, false for too little forecast

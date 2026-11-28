@@ -1461,12 +1461,22 @@ export interface EnergyByDay {
   complete: boolean;
 }
 
+/** Correction held after a day without production. */
+export interface SolarHold {
+  /** Produced/forecasted ratio of the day, capped at 1. */
+  ratio: number;
+  /** Last time the condition was observed (RFC 3339). */
+  since: string;
+}
+
 /** Solar production forecast. */
 export interface SolarDetails {
   /** Correction factor applied to the forecast based on past production. */
   scale?: number;
   /** Produced/forecasted ratio of the last hour, capped at 1. Only present when meaningful (daylight, complete data, no curtailment). */
   nowcast?: number;
+  /** Correction held after a day without production, e.g. snow on the modules. Applies to the next day as well. */
+  hold?: SolarHold;
   /** Expected production today. */
   today?: EnergyByDay;
   /** Expected production tomorrow. */

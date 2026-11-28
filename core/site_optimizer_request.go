@@ -141,15 +141,9 @@ func (site *Site) optimizerRequest(battery []types.Measurement) (optimizer.Optim
 		}
 
 		scale := func(api.Rate) float64 { return site.effectiveSolarScale() }
-		if nowcast, ok := site.solarNowcast(); ok && site.GetSolarAdjusted() {
-			eod := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
+		if c, ok := site.solarCorrection(now); ok && site.GetSolarAdjusted() {
 			longTerm := scale
-			scale = func(r api.Rate) float64 {
-				if r.Start.Before(eod) {
-					return nowcastScale(longTerm(r), nowcast, r.Start.Sub(now))
-				}
-				return longTerm(r)
-			}
+			scale = func(r api.Rate) float64 { return c.scale(longTerm(r), r.Start) }
 		}
 
 		ft = prorate(scaleAndPruneFunc(solarEnergy, scale, minLen), firstSlotDuration)

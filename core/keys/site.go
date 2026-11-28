@@ -63,6 +63,7 @@ const (
 	// forecast settings
 	SolarAdjusted     = "solarAdjusted"
 	ProfilePercentile = "profilePercentile"
+	SolarHold         = "solarHold"
 
 	// metrics
 	MetricsFillVersion = "metricsFillVersion"

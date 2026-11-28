@@ -7,6 +7,7 @@ import (
 
 	"github.com/evcc-io/evcc/api"
 	"github.com/evcc-io/evcc/tariff"
+	"github.com/evcc-io/evcc/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -147,23 +148,61 @@ func TestPercentileOf(t *testing.T) {
 	})
 }
 
-func TestNowcastScale(t *testing.T) {
+func TestSolarCorrectionScale(t *testing.T) {
+	now := time.Date(2026, 11, 28, 14, 0, 0, 0, time.UTC)
+	eod := time.Date(2026, 11, 29, 0, 0, 0, 0, time.UTC)
+
+	nowcast := solarCorrection{ratio: 0.1, anchor: now, fade: solarNowcastHorizon, until: eod}
+	hold := solarCorrection{ratio: 0.02, anchor: now, plateau: solarHoldPlateau, fade: solarHoldFade}
+
 	tc := []struct {
 		name  string
-		ahead time.Duration
+		c     solarCorrection
+		start time.Time
 		want  float64
 	}{
-		{"current slot", 0, 0.1},
-		{"already started", -10 * time.Minute, 0.1},
-		{"half way", solarNowcastHorizon / 2, 0.4},
-		{"horizon", solarNowcastHorizon, 0.7},
-		{"beyond", 2 * solarNowcastHorizon, 0.7},
+		{"nowcast current slot", nowcast, now, 0.1},
+		{"nowcast already started", nowcast, now.Add(-10 * time.Minute), 0.1},
+		{"nowcast half way", nowcast, now.Add(solarNowcastHorizon / 2), 0.4},
+		{"nowcast horizon", nowcast, now.Add(solarNowcastHorizon), 0.7},
+		{"nowcast not applied tomorrow", nowcast, eod.Add(time.Hour), 0.7},
+		{"hold next morning", hold, now.Add(18 * time.Hour), 0.02},
+		{"hold end of plateau", hold, now.Add(solarHoldPlateau), 0.02},
+		{"hold fading", hold, now.Add(solarHoldPlateau + solarHoldFade/2), 0.36},
+		{"hold faded", hold, now.Add(solarHoldPlateau + solarHoldFade), 0.7},
 	}
 	for _, tc := range tc {
 		t.Run(tc.name, func(t *testing.T) {
-			assert.InDelta(t, tc.want, nowcastScale(0.7, 0.1, tc.ahead), 1e-9)
+			assert.InDelta(t, tc.want, tc.c.scale(0.7, tc.start), 1e-9)
 		})
 	}
+}
+
+func TestUpdateSolarHold(t *testing.T) {
+	now := time.Date(2026, 11, 28, 14, 0, 0, 0, time.UTC)
+	site := &Site{log: util.NewLogger("foo")}
+
+	// production is as expected, nothing to hold
+	assert.Nil(t, site.updateSolarHold(solarNowcastResult{day: 0.6, dayOk: true, ratio: 0.7, ok: true}, now))
+
+	// snow day: almost no production despite forecast
+	hold := site.updateSolarHold(solarNowcastResult{day: 0.01, dayOk: true, ratio: 0.01, ok: true}, now)
+	require.NotNil(t, hold)
+	assert.Equal(t, 0.01, hold.Ratio)
+
+	// night: no data, the hold stays
+	night := now.Add(10 * time.Hour)
+	assert.Equal(t, hold, site.updateSolarHold(solarNowcastResult{}, night))
+
+	// next morning, production resumes slowly: not released yet
+	assert.NotNil(t, site.updateSolarHold(solarNowcastResult{ratio: 0.2, ok: true}, now.Add(20*time.Hour)))
+
+	// modules are clear again
+	assert.Nil(t, site.updateSolarHold(solarNowcastResult{ratio: 0.8, ok: true}, now.Add(21*time.Hour)))
+
+	// expires without new observation
+	site.updateSolarHold(solarNowcastResult{day: 0.01, dayOk: true}, now)
+	assert.Nil(t, site.updateSolarHold(solarNowcastResult{}, now.Add(solarHoldPlateau+solarHoldFade+time.Minute)))
 }
 
 func TestNowcastRatio(t *testing.T) {
